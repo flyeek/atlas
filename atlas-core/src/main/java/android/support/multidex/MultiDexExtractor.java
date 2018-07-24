@@ -260,7 +260,8 @@ final class MultiDexExtractor {
 
                     // Create a zip file (extractedFile) containing only the secondary dex file
                     // (dexFile) from the apk.
-                    extract(apk, dexFile, extractedFile, extractedFilePrefix);
+                    //extract(apk, dexFile, extractedFile, extractedFilePrefix);
+                    extractUsingSplit(sourceApk, dexFile.getName(), extractedFile, extractedFilePrefix);
 
                     // Read zip crc of extracted dex
                     try {
@@ -364,6 +365,25 @@ final class MultiDexExtractor {
             } else {
                 Log.i(TAG, "Deleted old file " + oldFile.getPath());
             }
+        }
+    }
+
+    private static void extractUsingSplit(File apkFile, String dexName, File extractTo, String extractedFilePrefix)
+        throws IOException, FileNotFoundException {
+        // Temp files must not start with extractedFilePrefix to get cleaned up in prepareDexDir()
+        File tmp = File.createTempFile("tmp-" + extractedFilePrefix, EXTRACTED_SUFFIX,
+            extractTo.getParentFile());
+        Log.i(TAG, "Extracting " + tmp.getPath());
+
+        try {
+            tmp = ZipSpliter.split(apkFile.getPath(), dexName, tmp.getPath(), "classes.dex");
+            Log.i(TAG, "Renaming to " + extractTo.getPath());
+            if (!tmp.renameTo(extractTo)) {
+                throw new IOException("Failed to rename \"" + tmp.getAbsolutePath() +
+                    "\" to \"" + extractTo.getAbsolutePath() + "\"");
+            }
+        } finally {
+            tmp.delete();
         }
     }
 
