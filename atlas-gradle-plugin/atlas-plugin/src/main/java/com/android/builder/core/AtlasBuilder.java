@@ -834,7 +834,7 @@ public class AtlasBuilder extends AndroidBuilder {
 
         SymbolTable mainSymbols = AtlasSymbolIo.readFromAapt(mainSymbolFile, pacakgeName);
         mainSymbols.getSymbols().values().forEach(symbol -> {
-            if (builder.contains(symbol)){
+            if (builder.contains(symbol) && builder.get(symbol).getValue().startsWith("0x7f")){
                 removeSymbol(builder,symbol);
                 builder.add(symbol);
             }
