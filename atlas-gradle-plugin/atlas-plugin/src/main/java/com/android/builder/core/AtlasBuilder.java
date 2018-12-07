@@ -226,6 +226,7 @@ import com.android.ide.common.process.*;
 import com.android.manifmerger.ManifestMerger2;
 import com.android.manifmerger.ManifestProvider;
 import com.android.manifmerger.MergingReport;
+import com.android.resources.ResourceType;
 import com.android.sdklib.BuildToolInfo;
 import com.android.sdklib.BuildToolInfo.PathId;
 import com.android.utils.ILogger;
@@ -833,14 +834,33 @@ public class AtlasBuilder extends AndroidBuilder {
 
         SymbolTable mainSymbols = AtlasSymbolIo.readFromAapt(mainSymbolFile, pacakgeName);
         mainSymbols.getSymbols().values().forEach(symbol -> {
-            if (builder.contains(symbol) && (builder.get(symbol).getValue().contains("0x7f")
-                || builder.get(symbol).getValue().contains("0x01"))) {
+            if (builder.contains(symbol) && needReplaceByMainSymbol(builder.get(symbol))) {
                 removeSymbol(builder, symbol);
                 builder.add(symbol);
             }
         });
 
         return builder.build();
+    }
+
+    private boolean needReplaceByMainSymbol(@Nullable Symbol symbol) {
+        if (symbol == null) {
+            return false;
+        }
+
+        String symbolValue = symbol.getValue();
+        if (symbol.getResourceType() == ResourceType.STYLEABLE) {
+            String[] symbolValues = symbolValue.substring(1, symbolValue.length() - 1)
+                .replace(" ", "").split(",");
+            for (String value : symbolValues) {
+                if (!(value.startsWith("0x7f") || value.startsWith("0x01"))) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return symbolValue.startsWith("0x7f") || symbolValue.startsWith("0x01");
+        }
     }
 
     private void removeSymbol(SymbolTable.Builder builder, Symbol symbol) {
