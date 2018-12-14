@@ -209,16 +209,30 @@
 
 package com.taobao.android.builder.tasks.transform;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
-import com.android.build.api.transform.*;
+import com.android.build.api.transform.DirectoryInput;
+import com.android.build.api.transform.Format;
+import com.android.build.api.transform.JarInput;
+import com.android.build.api.transform.QualifiedContent;
 import com.android.build.api.transform.QualifiedContent.ContentType;
+import com.android.build.api.transform.TransformException;
+import com.android.build.api.transform.TransformInput;
+import com.android.build.api.transform.TransformInvocation;
 import com.android.build.gradle.internal.api.AppVariantContext;
 import com.android.build.gradle.internal.api.AwbTransform;
 import com.android.build.gradle.internal.pipeline.OriginalStream;
 import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.pipeline.TransformTask;
-import com.android.build.gradle.internal.transforms.BaseProguardAction;
 import com.android.build.gradle.internal.transforms.ProGuardTransform;
 import com.android.build.gradle.internal.transforms.ProguardConfigurable;
 import com.google.common.collect.ImmutableList;
@@ -236,25 +250,11 @@ import com.taobao.android.builder.tools.proguard.KeepOnlyConfigurationParser;
 import com.taobao.android.builder.tools.proguard.domain.Input;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import proguard.ClassPath;
-import proguard.ClassPathEntry;
-import proguard.Configuration;
 import proguard.ParseException;
-
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-
-import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactScope.EXTERNAL;
-import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.CLASSES;
-import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ConsumedConfigType.RUNTIME_CLASSPATH;
 
 /**
  * Created by wuzhong on 2017/4/25.
@@ -310,7 +310,9 @@ public class AtlasProguardTransform extends ProGuardTransform {
             //            defaultProguardFiles.addAll(oldConfigurableFileCollection.getFiles());
             Collection<File> mainProguardFiles = appVariantContext.getVariantData().getVariantConfiguration()
                 .getBuildType().getProguardFiles();
-            mainProguardFiles.add(appVariantContext.getScope().getProcessAndroidResourcesProguardOutputFile());
+            mainProguardFiles.addAll(FileUtils.listFiles(
+                appVariantContext.getScope().getProcessAndroidResourcesProguardOutputFile().getParentFile(),
+                TrueFileFilter.INSTANCE, TrueFileFilter.INSTANCE));
             defaultProguardFiles.addAll(mainProguardFiles);
             nonConsumerProguardFiles.addAll(mainProguardFiles);
 
