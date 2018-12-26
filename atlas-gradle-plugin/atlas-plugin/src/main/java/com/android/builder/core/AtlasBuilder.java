@@ -449,13 +449,13 @@ public class AtlasBuilder extends AndroidBuilder {
                         mainRTxt.getAbsolutePath() + "is not exist, maybe no resources in this bundle! ");
                 }
 
-                SymbolTable awbSymbols = build(awbSymbolFile, mainPackageName, mainRTxt, mainSymbolFile, pacakgeName);
-                if (awbSymbols != null) {
-                    AtlasSymbolIo.write(awbSymbols, mergedSymbolFile);
-                }
+                //SymbolTable awbSymbols = build(awbSymbolFile, mainPackageName, mainRTxt, mainSymbolFile, pacakgeName);
+                //if (awbSymbols != null) {
+                //    AtlasSymbolIo.write(awbSymbols, mergedSymbolFile);
+                //}
 
                 //why do this?
-                //                FileUtils.writeLines(mergedSymbolFile, FileUtils.readLines(mainSymbolFile), true);
+                                FileUtils.writeLines(mergedSymbolFile, FileUtils.readLines(mainSymbolFile), true);
             } catch (IOException e) {
                 throw new RuntimeException("Could not load file ", e);
             }

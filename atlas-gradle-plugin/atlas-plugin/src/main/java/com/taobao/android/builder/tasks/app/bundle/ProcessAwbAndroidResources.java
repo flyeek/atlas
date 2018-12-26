@@ -232,6 +232,7 @@ import com.android.build.gradle.internal.dsl.AaptOptions;
 import com.android.build.gradle.internal.dsl.DslAdaptersKt;
 import com.android.build.gradle.internal.incremental.FileType;
 import com.android.build.gradle.internal.incremental.InstantRunBuildContext;
+import com.android.build.gradle.internal.scope.CodeShrinker;
 import com.android.build.gradle.internal.scope.ConventionMappingHelper;
 import com.android.build.gradle.internal.scope.SplitList;
 import com.android.build.gradle.internal.scope.TaskConfigAction;
@@ -789,10 +790,14 @@ public class ProcessAwbAndroidResources extends IncrementalTask {
             ConventionMappingHelper.map(processResources, "proguardOutputFile", new Callable<File>() {
                 @Override
                 public File call() throws Exception {
-                    File resourceProguardOutputDir = scope.getProcessAndroidResourcesProguardOutputFile()
-                        .getParentFile();
-                    String baseName = scope.getProcessAndroidResourcesProguardOutputFile().getName();
-                    return new File(resourceProguardOutputDir, awbBundle.getName() + "-" + baseName);
+                    if (scope.getCodeShrinker() != null && scope.getCodeShrinker() == CodeShrinker.PROGUARD) {
+                        File resourceProguardOutputDir = scope.getProcessAndroidResourcesProguardOutputFile()
+                            .getParentFile();
+                        String baseName = scope.getProcessAndroidResourcesProguardOutputFile().getName();
+                        return new File(resourceProguardOutputDir, awbBundle.getName() + "-" + baseName);
+                    }
+
+                    return null;
                 }
             });
 
