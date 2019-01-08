@@ -454,8 +454,8 @@ public class AtlasBuilder extends AndroidBuilder {
                 //    AtlasSymbolIo.write(awbSymbols, mergedSymbolFile);
                 //}
 
-                //why do this?
-                                FileUtils.writeLines(mergedSymbolFile, FileUtils.readLines(mainSymbolFile), true);
+                //why do this? youku need use this !
+                FileUtils.writeLines(mergedSymbolFile, FileUtils.readLines(mainSymbolFile), true);
             } catch (IOException e) {
                 throw new RuntimeException("Could not load file ", e);
             }
@@ -574,7 +574,12 @@ public class AtlasBuilder extends AndroidBuilder {
 
             List<File> outputs = new ArrayList<>();
 
+<<<<<<< HEAD
             for (File input : inputs) {
+=======
+                for (File input : inputs) {
+                    logger.warning("Dex input File:%s",input.getAbsolutePath());
+>>>>>>> atlas/dev_atlas_2nd
 
                 final File dexDir = getDexOutputDir(input, tmpDir, outputs);
                 dexDir.mkdirs();
@@ -713,8 +718,9 @@ public class AtlasBuilder extends AndroidBuilder {
             }
         } else {
             //R Too much, you need to start multi-dex
-            multiDex = true;
         }
+
+        multiDex = false;
 
         dexFile.delete();
 
@@ -724,6 +730,7 @@ public class AtlasBuilder extends AndroidBuilder {
         if (!multiDex) {
             defaultDexOptions.setJavaMaxHeapSize("500m");
             defaultDexOptions.setDexInProcess(true);
+            defaultDexOptions.getAdditionalParameters().remove("--multi-dex");
         }
 
         sLogger.info("[mtldex] pre dex for {} {}",
@@ -779,6 +786,7 @@ public class AtlasBuilder extends AndroidBuilder {
         Map<String, Object> placeHolders,
         @NonNull List<ManifestMerger2.Invoker.Feature> optionalFeatures,
         @Nullable File reportFile) {
+
 
         return super.mergeManifestsForApplication(
             mainManifest,
