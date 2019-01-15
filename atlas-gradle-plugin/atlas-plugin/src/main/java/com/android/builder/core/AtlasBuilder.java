@@ -574,12 +574,8 @@ public class AtlasBuilder extends AndroidBuilder {
 
             List<File> outputs = new ArrayList<>();
 
-<<<<<<< HEAD
-            for (File input : inputs) {
-=======
                 for (File input : inputs) {
                     logger.warning("Dex input File:%s",input.getAbsolutePath());
->>>>>>> atlas/dev_atlas_2nd
 
                 final File dexDir = getDexOutputDir(input, tmpDir, outputs);
                 dexDir.mkdirs();
