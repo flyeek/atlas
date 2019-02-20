@@ -1,9 +1,24 @@
 package com.android.build.gradle.internal.incremental;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+
 import com.android.annotations.NonNull;
 import com.android.utils.ILogger;
 import com.google.common.base.Objects;
-import org.objectweb.asm.*;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.GeneratorAdapter;
 import org.objectweb.asm.commons.JSRInlinerAdapter;
 import org.objectweb.asm.commons.Method;
@@ -11,9 +26,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodNode;
-
-import java.util.*;
-import java.util.function.Consumer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -419,7 +431,7 @@ public class TBIncrementalSupportVisitor extends TBIncrementalVisitor {
 
             for (ClassNode parentNode : parentNodes) {
 
-                addAllNewMethods(classNode, parentNode, uniqueMethods,supportAddCallSuper? null:visitSuperMethods);
+                addAllNewMethods(classNode, parentNode, uniqueMethods,supportAddCallSuper ? visitSuperMethods: null);
             }
         }
 
@@ -754,7 +766,7 @@ public class TBIncrementalSupportVisitor extends TBIncrementalVisitor {
                     && isCallableFromSubclass(method, superClass, instrumentedClass)
                     ) {
                 if (visitSuperMethods == null){
-                    methods.put(name, new MethodReference(method, superClass));
+                    //methods.put(name, new MethodReference(method, superClass));
                 }else if (visitSuperMethods.contains(name)) {
                     methods.put(name, new MethodReference(method, superClass));
                 }
