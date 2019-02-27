@@ -267,7 +267,7 @@ public class TBIncrementalSupportVisitor extends TBIncrementalVisitor {
      */
     private static int transformAccessForInstantRun(int access) {
         AccessRight accessRight = AccessRight.fromNodeAccess(access);
-        if (accessRight != AccessRight.PRIVATE) {
+        if (accessRight != AccessRight.PRIVATE && accessRight != AccessRight.PACKAGE_PRIVATE) {
             access &= ~Opcodes.ACC_PROTECTED;
             access &= ~Opcodes.ACC_PRIVATE;
             return access | Opcodes.ACC_PUBLIC;
