@@ -209,6 +209,17 @@
 
 package com.taobao.android.builder.dependency.parser.helper;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.android.build.gradle.internal.LoggerWrapper;
 import com.android.build.gradle.internal.dependency.VariantDependencies;
 import com.android.build.gradle.internal.ide.DependencyConvertUtils;
@@ -230,9 +241,6 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.artifacts.result.DependencyResult;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
-
-import java.io.File;
-import java.util.*;
 
 /**
  * Created by wuzhong on 2017/4/17.
@@ -440,7 +448,7 @@ public class DependencyResolver {
     }
 
     private Set<DependencyResult> combine(Set<DependencyResult> dependencyResults, Set<? extends DependencyResult> dependencies) {
-        Set<DependencyResult>combineDependencies = new HashSet<>();
+        Set<DependencyResult> combineDependencies = new LinkedHashSet<>();
         if (dependencyResults!= null) {
             for (DependencyResult dependencyResult : dependencyResults) {
                 combineDependencies.add(dependencyResult);
