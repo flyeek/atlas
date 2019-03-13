@@ -165,6 +165,7 @@ public class TBIncrementalSupportVisitor extends TBIncrementalVisitor {
                 public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
                     if (opcode == Opcodes.INVOKESPECIAL && !owner.equals(visitedClassName)) {
                         visitSuperMethods.add(name + "." + desc);
+
                     }
                     super.visitMethodInsn(opcode, owner, name, desc, itf);
                 }
@@ -174,6 +175,21 @@ public class TBIncrementalSupportVisitor extends TBIncrementalVisitor {
         //this is method generaged by visualMachine
 
         if ((access & Opcodes.ACC_SYNTHETIC) != 0){
+            return defaultVisitor;
+        }
+
+        // Ignore method with super call instruction.
+        List<String> superMethodsInvoked = new ArrayList<>();
+        method.instructions.accept(new MethodVisitor(api) {
+            @Override
+            public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+                if (opcode == Opcodes.INVOKESPECIAL && !owner.equals(visitedClassName) && !name.equals("<init>")) {
+                    superMethodsInvoked.add(name + "." + desc);
+                }
+                super.visitMethodInsn(opcode, owner, name, desc, itf);
+            }
+        });
+        if (superMethodsInvoked.size() > 0) {
             return defaultVisitor;
         }
 
