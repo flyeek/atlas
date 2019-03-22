@@ -256,6 +256,10 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import proguard.ClassPath;
 import proguard.ParseException;
 
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactScope.ALL;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.PROGUARD_RULES;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ConsumedConfigType.COMPILE_CLASSPATH;
+
 /**
  * Created by wuzhong on 2017/4/25.
  */
@@ -315,6 +319,14 @@ public class AtlasProguardTransform extends ProGuardTransform {
             nonConsumerProguardFiles.addAll(mainProguardFiles);
 
         }
+
+        if (buildConfig.getConsumerProguardEnabled()) {
+            nonConsumerProguardFiles.addAll(
+                appVariantContext.getScope().getArtifactFileCollection(COMPILE_CLASSPATH, ALL, PROGUARD_RULES)
+                    .getFiles());
+
+        }
+
         List<AwbBundle> awbBundles = AtlasBuildContext.androidDependencyTrees.get(
             appVariantContext.getScope().getVariantConfiguration().getFullName()).getAwbBundles();
         if (awbBundles != null && awbBundles.size() > 0) {
