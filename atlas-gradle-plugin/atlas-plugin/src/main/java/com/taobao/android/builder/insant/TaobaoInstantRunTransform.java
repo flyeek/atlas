@@ -7,6 +7,11 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.FileVisitResult;
+import java.nio.file.FileVisitor;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -42,6 +47,7 @@ import com.android.build.gradle.internal.incremental.InstantRunVerifierStatus;
 import com.android.build.gradle.internal.incremental.TBIncrementalChangeVisitor;
 import com.android.build.gradle.internal.incremental.TBIncrementalSupportVisitor;
 import com.android.build.gradle.internal.incremental.TBIncrementalVisitor;
+import com.android.build.gradle.internal.incremental.TBIncrementalVisitor.ErrorType;
 import com.android.build.gradle.internal.pipeline.ExtendedContentType;
 import com.android.build.gradle.internal.scope.GlobalScope;
 import com.android.build.gradle.internal.scope.InstantRunVariantScope;
@@ -61,6 +67,7 @@ import com.taobao.android.builder.AtlasBuildContext;
 import com.taobao.android.builder.dependency.model.AwbBundle;
 import com.taobao.android.builder.insant.matcher.MatcherCreator;
 import com.taobao.android.builder.insant.visitor.ModifyClassVisitor;
+import com.taobao.android.builder.tools.Profiler;
 import com.taobao.android.builder.tools.multidex.mutli.MappingReaderProcess;
 import org.gradle.api.logging.Logging;
 import org.objectweb.asm.ClassReader;
@@ -147,7 +154,8 @@ public class TaobaoInstantRunTransform extends Transform {
 
     @Override
     public void transform(TransformInvocation invocation) throws IOException, TransformException, InterruptedException {
-
+        Profiler.start("InstantRun Profile");
+        Profiler.enter("load progaurd info");
         File mappingFile = loadProguardFile();
         boolean isMinifyEnabled = variantContext.getVariantConfiguration().getBuildType().isMinifyEnabled();
 
@@ -155,7 +163,7 @@ public class TaobaoInstantRunTransform extends Transform {
             proguard.obfuscate.MappingReader mappingReader = new proguard.obfuscate.MappingReader(mappingFile);
             mappingReader.pump(mappingReaderProcess);
         }
-
+        Profiler.release();
         if (null != variantContext.apContext.getApExploredFolder() && variantContext.apContext
                 .getApExploredFolder().exists()) {
             File errorFile = new File(variantContext.apContext.getApExploredFolder(), "warning-instrument-inject-error.properties");
@@ -170,7 +178,7 @@ public class TaobaoInstantRunTransform extends Transform {
                 });
             }
         }
-
+        Profiler.enter("check jar inputs");
         List<JarInput> jarInputs =
                 invocation
                         .getInputs()
@@ -180,18 +188,22 @@ public class TaobaoInstantRunTransform extends Transform {
 
         Preconditions.checkState(
                 jarInputs.isEmpty(), "Unexpected inputs: " + Joiner.on(", ").join(jarInputs));
-
+        Profiler.release();
         InstantRunBuildContext buildContext = transformScope.getInstantRunBuildContext();
-
+        Profiler.enter("do Transform");
         buildContext.startRecording(InstantRunBuildContext.TaskType.INSTANT_RUN_TRANSFORM);
         try {
             doTransform(invocation);
         } finally {
             buildContext.stopRecording(InstantRunBuildContext.TaskType.INSTANT_RUN_TRANSFORM);
         }
+        Profiler.release();
+        Profiler.enter("dump enhanced result");
         org.apache.commons.io.FileUtils.writeLines(injectFailedFile, errors);
         org.apache.commons.io.FileUtils.writeLines(injectSuccessFile, success);
-
+        Profiler.release();
+        Profiler.release();
+        LOGGER.warning(Profiler.dump());
     }
 
 
@@ -214,6 +226,7 @@ public class TaobaoInstantRunTransform extends Transform {
         File classesTwoOutput =
                 outputProvider.getContentLocation(
                         "classes", com.android.build.gradle.internal.pipeline.TransformManager.CONTENT_CLASS, getScopes(), Format.DIRECTORY);
+        FileUtils.cleanOutputDir(classesTwoOutput);
 
         File classesThreeOutput =
                 outputProvider.getContentLocation(
@@ -226,168 +239,120 @@ public class TaobaoInstantRunTransform extends Transform {
         AtlasBuildContext.atlasMainDexHelperMap.get(variantContext.getVariantName()).getInputDirs().add(classesTwoOutput);
         AtlasBuildContext.atlasMainDexHelperMap.get(variantContext.getVariantName()).getInputDirs().add(classesThreeOutput);
 
+
+        // first get all referenced input to construct a class loader capable of loading those
+        // classes. This is useful for ASM as it needs to load classes
+        List<URL> referencedInputUrls = getAllClassesLocations(
+            invocation.getInputs(), invocation.getReferencedInputs());
+        // This class loader could be optimized a bit, first we could create a parent class loader
+        // with the android.jar only that could be stored in the GlobalScope for reuse. This
+        // class loader could also be store in the VariantScope for potential reuse if some
+        // other transform need to load project's classes.
+        URLClassLoader urlClassLoader = new NonDelegatingUrlClassloader(referencedInputUrls);
+
         List<TransformException> exceptions = new ArrayList<>();
         List<WorkItem> workItems = new ArrayList<>();
+        Profiler.enter("main collect");
         for (TransformInput input : invocation.getInputs()) {
             for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
                 File inputDir = directoryInput.getFile();
-                LOGGER.warning("inputDir:", inputDir.getAbsolutePath());
-                // non incremental mode, we need to traverse the TransformInput#getFiles()
-                // folder
-                FileUtils.cleanOutputDir(classesTwoOutput);
-                for (File file : Files.fileTreeTraverser().breadthFirstTraversal(inputDir)) {
-                    if (file.isDirectory()) {
-                        continue;
+                int inputDirPathLength = inputDir.getPath().length() + 1;
+                //LOGGER.warning("inputDir:", inputDir.getAbsolutePath());
+
+                java.nio.file.Files.walkFileTree(Paths.get(inputDir.getPath()), new AbstractClassFileVisitor() {
+                    @Override
+                    public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) {
+                        File file = path.toFile();
+                        if (file.getPath().endsWith(SdkConstants.DOT_CLASS)) {
+                            executor.execute(() -> {
+                                String relativePath = file.getPath().substring(inputDirPathLength);
+                                // For R class, just copy.
+                                if(isRClass(file)) {
+                                    errors.add(ErrorType.R_CLASS.name() + ":" + relativePath);
+                                    File outputFile = new File(classesTwoOutput, relativePath);
+                                    Files.createParentDirs(outputFile);
+                                    FileUtils.copyFile(file, outputFile);
+                                } else {
+                                    filterClassToWorkItem(urlClassLoader, file, relativePath, classesTwoOutput, classesThreeOutput, exceptions);
+                                }
+                                return null;
+                            });
+                        }
+                        return FileVisitResult.CONTINUE;
                     }
-                    PatchPolicy patchPolicy = PatchPolicy.NONE;
-                    if (file.getName().endsWith(SdkConstants.DOT_CLASS)) {
-                        patchPolicy = parseClassPolicy(file);
-                    }
-                    String path = FileUtils.relativePath(file, inputDir);
-                    String className = path.replace("/", ".").substring(0, path.length() - 6);
-
-                    boolean isAdd = false;
-                    switch (patchPolicy) {
-                        case ADD:
-                            modifyClasses.put(className, PatchPolicy.ADD.name());
-                            workItems.add(() -> transformToClasses2Format(
-                                    inputDir,
-                                    file,
-                                    classesThreeOutput,
-                                    Status.ADDED));
-                            isAdd = true;
-                            break;
-
-                        case MODIFY:
-                            if (errors.contains(path)) {
-                                exceptions.add(new TransformException(path + " is not support modify because inject error in base build!"));
-                            }
-                            modifyClasses.put(className, PatchPolicy.MODIFY.name());
-                            workItems.add(() -> transformToClasses3Format(
-                                    inputDir,
-                                    file,
-                                    classesThreeOutput));
-                            break;
-                    }
-                    if (isAdd) {
-                        continue;
-                    }
-
-                    workItems.add(() -> transformToClasses2Format(
-                            inputDir,
-                            file,
-                            classesTwoOutput,
-                            Status.ADDED));
-                }
-
-
+                });
             }
         }
 
-
+        Profiler.release();
+        Profiler.enter("awb collect");
         Map<AwbBundle, File> awbBundleFileMap = new HashMap<>();
         variantOutputContext.getAwbTransformMap().values().forEach(awbTransform -> {
             File awbClassesTwoOutout = variantOutputContext.getAwbClassesInstantOut(awbTransform.getAwbBundle());
-            LOGGER.warning("InstantAwbclassOut[" + awbTransform.getAwbBundle().getPackageName() + "]---------------------" + awbClassesTwoOutout.getAbsolutePath());
+            //LOGGER.warning("InstantAwbclassOut[" + awbTransform.getAwbBundle().getPackageName() + "]---------------------" + awbClassesTwoOutout.getAbsolutePath());
             FileUtils.mkdirs(awbClassesTwoOutout);
             try {
                 FileUtils.cleanOutputDir(awbClassesTwoOutout);
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            awbTransform.getInputDirs().forEach(dir -> {
-                LOGGER.warning("InstantAwbclassDir[" + awbTransform.getAwbBundle().getPackageName() + "]---------------------" + dir.getAbsolutePath());
-                for (File file : Files.fileTreeTraverser().breadthFirstTraversal(dir)) {
-                    if (!file.exists() || file.isDirectory()) {
-                        continue;
-                    }
-                    PatchPolicy patchPolicy = PatchPolicy.NONE;
-                    if (file.getName().endsWith(SdkConstants.DOT_CLASS)) {
-                        patchPolicy = parseClassPolicy(file);
-                    }
-                    String path = FileUtils.relativePath(file, dir);
-                    String className = path.replace("/", ".").substring(0, path.length() - 6);
-                    boolean isAdd = false;
-                    switch (patchPolicy) {
-                        case ADD:
-                            modifyClasses.put(className, PatchPolicy.ADD.name());
-                            workItems.add(() -> transformToClasses2Format(
-                                    dir,
-                                    file,
-                                    classesThreeOutput,
-                                    Status.ADDED));
-                            isAdd = true;
-                            break;
 
-                        case MODIFY:
-                            if (errors.contains(path)) {
-                                exceptions.add(new TransformException(path + " is not support modify because inject error in base build!"));
-                            }
-                            modifyClasses.put(className, PatchPolicy.MODIFY.name());
-                            workItems.add(() -> transformToClasses3Format(
-                                    dir,
-                                    file,
-                                    classesThreeOutput));
-                            break;
+
+            // Just copy remote bundle classes.
+            if (awbTransform.getAwbBundle().isRemote) {
+                awbTransform.getInputDirs().forEach(dir -> {
+                    //LOGGER.warning("InstantAwbclassDir[" + awbTransform.getAwbBundle().getPackageName() + "]---------------------" + dir.getAbsolutePath());
+                    executor.execute(() -> copyClasses(dir, awbClassesTwoOutout));
+                });
+            } else {
+                awbTransform.getInputDirs().forEach(dir -> {
+                    //LOGGER.warning("InstantAwbclassDir[" + awbTransform.getAwbBundle().getPackageName() + "]---------------------" + dir.getAbsolutePath());
+                    if (dir.getParentFile().getParentFile().getName().equals("awb-classes")) {
+                        // Just copy R classes.
+                        executor.execute(() -> copyClasses(dir, awbClassesTwoOutout));
+                    } else {
+                        try {
+                            java.nio.file.Files.walkFileTree(Paths.get(dir.getPath()), new AbstractClassFileVisitor() {
+                                @Override
+                                public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes)
+                                    throws IOException {
+                                    File file = path.toFile();
+                                    if (file.getPath().endsWith(SdkConstants.DOT_CLASS)) {
+                                        executor.execute(() -> {
+                                            String relativePath = file.getPath().substring(dir.getPath().length() + 1);
+                                            filterClassToWorkItem(urlClassLoader, file, relativePath, awbClassesTwoOutout, classesThreeOutput, exceptions);
+                                            return null;
+                                        });
+                                    }
+                                    return FileVisitResult.CONTINUE;
+                                }
+                            });
+                        } catch (IOException e) {
+                            throw new RuntimeException("Instant Run Transform awb traverse file tree failed. " + e.getMessage());
+                        }
                     }
-
-                    if (isAdd) {
-                        continue;
-                    }
-
-                    workItems.add(() -> transformToClasses2Format(
-                            dir,
-                            file,
-                            awbClassesTwoOutout,
-                            Status.ADDED));
-                }
-
-            });
+                });
+            }
 
             awbBundleFileMap.put(awbTransform.getAwbBundle(), awbClassesTwoOutout);
         });
-
-        // first get all referenced input to construct a class loader capable of loading those
-        // classes. This is useful for ASM as it needs to load classes
-        List<URL> referencedInputUrls = getAllClassesLocations(
-                invocation.getInputs(), invocation.getReferencedInputs());
+        Profiler.release();
+        Profiler.enter("enhance classes");
 
         if (exceptions.size() > 0) {
             throw exceptions.get(0);
         }
-        // This class loader could be optimized a bit, first we could create a parent class loader
-        // with the android.jar only that could be stored in the GlobalScope for reuse. This
-        // class loader could also be store in the VariantScope for potential reuse if some
-        // other transform need to load project's classes.
-        try (URLClassLoader urlClassLoader = new NonDelegatingUrlClassloader(referencedInputUrls)) {
-            workItems.forEach(
-                    workItem ->
-                            executor.execute(
-                                    () -> {
-                                        ClassLoader currentThreadClassLoader =
-                                                Thread.currentThread().getContextClassLoader();
-                                        Thread.currentThread()
-                                                .setContextClassLoader(urlClassLoader);
-                                        try {
-                                            return workItem.doWork();
-                                        } finally {
-                                            Thread.currentThread()
-                                                    .setContextClassLoader(
-                                                            currentThreadClassLoader);
-                                        }
-                                    }));
 
-            try {
-                // wait for all work items completion.
-                executor.waitForTasksWithQuickFail(true);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new TransformException(e);
-            } catch (Exception e) {
-                throw new TransformException(e);
-            }
+        try {
+            // wait for all work items completion.
+            executor.waitForTasksWithQuickFail(true);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new TransformException(e);
+        } catch (Exception e) {
+            throw new TransformException(e);
         }
-
+        Profiler.release();
         variantOutputContext.getAwbTransformMap().values().parallelStream().forEach(awbTransform -> {
             awbTransform.getInputLibraries().clear();
             awbTransform.getInputFiles().clear();
@@ -402,7 +367,74 @@ public class TaobaoInstantRunTransform extends Transform {
         }
 
         wrapUpOutputs(classesTwoOutput, classesThreeOutput);
+    }
 
+    private static abstract class AbstractClassFileVisitor implements FileVisitor<Path> {
+
+        @Override
+        public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes basicFileAttributes) throws IOException {
+            return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public abstract FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException;
+
+        @Override
+        public FileVisitResult visitFileFailed(Path path, IOException e) throws IOException {
+            return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public FileVisitResult postVisitDirectory(Path path, IOException e) throws IOException {
+            return FileVisitResult.CONTINUE;
+        }
+    }
+
+    private boolean isRClass(@NonNull File inputFile) {
+
+        if (inputFile.getPath().endsWith(SdkConstants.DOT_CLASS)) {
+            String fileName = inputFile.getName();
+            return !fileName.equals("R" + SdkConstants.DOT_CLASS) && !fileName.startsWith("R$");
+        } else {
+            return false;
+        }
+    }
+
+    private Void copyClasses(File originDir, File targetDir) {
+        try {
+            org.apache.commons.io.FileUtils.copyDirectory(originDir, targetDir);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return null;
+    }
+
+    private void filterClassToWorkItem(URLClassLoader urlClassLoader, File classFile, String relativePath, File classesTwoOutput,
+                                       File classesThreeOutput, List<TransformException> exceptions) {
+        if (!variantContext.getBuildType().getPatchConfig().isCreateIPatch()) {
+            doClassEnhance(urlClassLoader, true,relativePath, classFile, classesTwoOutput);
+            return;
+        }
+
+        PatchPolicy patchPolicy = parseClassPolicy(classFile);
+        String className = convertPathToDotClassName(relativePath);
+
+        switch (patchPolicy) {
+            case ADD:
+                modifyClasses.put(className, PatchPolicy.ADD.name());
+                doClassEnhance(urlClassLoader, true, relativePath, classFile, classesThreeOutput);
+                break;
+            case MODIFY:
+                if (errors.contains(relativePath)) {
+                    exceptions.add(new TransformException(relativePath + " is not support modify because inject error in base build!"));
+                }
+                modifyClasses.put(className, PatchPolicy.MODIFY.name());
+                doClassEnhance(urlClassLoader, false, relativePath, classFile, classesThreeOutput);
+                doClassEnhance(urlClassLoader, true,relativePath, classFile, classesTwoOutput);
+                break;
+            default:
+                break;
+        }
     }
 
     private PatchPolicy parseClassPolicy(File file) {
@@ -416,7 +448,7 @@ public class TaobaoInstantRunTransform extends Transform {
         try {
             inputStream = new BufferedInputStream(new FileInputStream(file));
             ClassReader classReader = new ClassReader(inputStream);
-            classReader.accept(new ModifyClassVisitor(Opcodes.ASM5, patchPolicy), ClassReader.SKIP_CODE);
+            classReader.accept(new ModifyClassVisitor(Opcodes.ASM5, patchPolicy), ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         } catch (Exception e) {
             e.printStackTrace();
 //            throw new RuntimeException(e);
@@ -526,26 +558,42 @@ public class TaobaoInstantRunTransform extends Transform {
         }
     }
 
+    private void doClassEnhance(URLClassLoader urlClassLoader, boolean isClassTwo, String relativePath, File inputFile, File outputDir) {
+        ClassLoader currentThreadClassLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(urlClassLoader);
+        try {
+            if (isClassTwo) {
+                transformToClasses2Format(relativePath, inputFile, outputDir, Status.ADDED);
+            } else {
+                transformToClasses3Format(relativePath, inputFile, outputDir);
+            }
+        } finally {
+            Thread.currentThread().setContextClassLoader(currentThreadClassLoader);
+        }
+    }
 
     @Nullable
-    protected Void transformToClasses3Format(File inputDir, File inputFile, File outputDir)
-            throws IOException {
+    protected Void transformToClasses3Format(String relativePath, File inputFile, File outputDir) {
 
 
-        File outputFile =
-                TBIncrementalVisitor.instrumentClass(
-                        targetPlatformApi.getFeatureLevel(),
-                        inputDir,
-                        inputFile,
-                        outputDir,
-                        TBIncrementalChangeVisitor.VISITOR_BUILDER,
-                        LOGGER,
-                        null,
-                        false,
-                        variantContext.getAtlasExtension().getTBuildConfig().isPatchConstructors(),
-                        variantContext.getAtlasExtension().getTBuildConfig().isPatchEachMethod(),
-                        variantContext.getAtlasExtension().getTBuildConfig().isSupportAddCallSuper(),
-                        variantContext.getAtlasExtension().getTBuildConfig().getPatchSuperMethodCount());
+        File outputFile = null;
+        try {
+            outputFile= TBIncrementalVisitor.instrumentClass(
+                targetPlatformApi.getFeatureLevel(),
+                relativePath,
+                inputFile,
+                outputDir,
+                TBIncrementalChangeVisitor.VISITOR_BUILDER,
+                LOGGER,
+                null,
+                false,
+                variantContext.getAtlasExtension().getTBuildConfig().isPatchConstructors(),
+                variantContext.getAtlasExtension().getTBuildConfig().isPatchEachMethod(),
+                variantContext.getAtlasExtension().getTBuildConfig().isSupportAddCallSuper(),
+                variantContext.getAtlasExtension().getTBuildConfig().getPatchSuperMethodCount());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         // if the visitor returned null, that means the class cannot be hot swapped or more likely
         // that it was disabled for InstantRun, we don't add it to our collection of generated
@@ -558,123 +606,124 @@ public class TaobaoInstantRunTransform extends Transform {
             LOGGER.info("Class %s cannot be hot swapped.", inputFile);
             return null;
         }
-        generatedClasses3Names.add(
-                inputFile.getAbsolutePath().substring(
-                        inputDir.getAbsolutePath().length() + 1,
-                        inputFile.getAbsolutePath().length() - ".class".length())
-                        .replace(File.separatorChar, '.'));
+        generatedClasses3Names.add(convertPathToDotClassName(relativePath));
         return null;
     }
 
-
+    /**
+     *
+     * @param relativePath relativePath of class.
+     * @param inputFile Must be a class file.
+     * @param outputDir
+     * @param change
+     * @return Void
+     */
     @Nullable
     protected Void transformToClasses2Format(
-            @NonNull final File inputDir,
+            @NonNull final String relativePath,
             @NonNull final File inputFile,
             @NonNull final File outputDir,
             @NonNull final Status change) {
+        try {
+            String originalPath = originalPath(relativePath);
 
-        if (inputFile.getPath().endsWith(SdkConstants.DOT_CLASS)) {
-            String path = FileUtils.relativePath(inputFile, inputDir);
-            try {
-                Set<String> excludePkgs = variantContext.getAtlasExtension().getTBuildConfig().getInjectExcludePkgs();
-                Set<String> pkgs = variantContext.getAtlasExtension().getTBuildConfig().getInjectPkgs();
-                String newPath = originalPath(path);
+            Set<String> excludePkgs = variantContext.getAtlasExtension().getTBuildConfig().getInjectExcludePkgs();
+            Set<String> includePkgs = variantContext.getAtlasExtension().getTBuildConfig().getInjectPkgs();
 
-                if (pkgs.size() > 0) {
-                    for (String s : pkgs) {
-                        boolean matched = MatcherCreator.create(s).match(newPath);
-                        if (matched) {
-                            File file = TBIncrementalVisitor.instrumentClass(
-                                    targetPlatformApi.getFeatureLevel(),
-                                    inputDir,
-                                    inputFile,
-                                    outputDir,
-                                    TBIncrementalSupportVisitor.VISITOR_BUILDER,
-                                    LOGGER,
-                                    errorType -> {
-                                        errors.add(errorType.name() + ":" + path);
-                                    },
-                                    variantContext.getAtlasExtension().getTBuildConfig().isInjectSerialVersionUID(), variantContext.getAtlasExtension().getTBuildConfig().isPatchConstructors(), variantContext.getAtlasExtension().getTBuildConfig().isPatchEachMethod(), variantContext.getAtlasExtension().getTBuildConfig().isSupportAddCallSuper(), variantContext.getAtlasExtension().getTBuildConfig().getPatchSuperMethodCount());
-                            if (file.length() == inputFile.length()) {
-                                errors.add("NO INJECT:" + path);
-                            } else {
-                                success.add("SUCCESS INJECT:" + path);
-                            }
-
-                            return null;
-                        }
-                    }
-
-                    File outputFile = new File(outputDir, path);
-                    try {
-                        Files.createParentDirs(outputFile);
-                        Files.copy(inputFile, outputFile);
-                        errors.add("NO INJECT:" + path);
-                        return null;
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
-                    }
-
-
-                } else {
-                    for (String s : excludePkgs) {
-                        boolean matched = MatcherCreator.create(s).match(newPath);
-                        if (matched) {
-                            File outputFile = new File(outputDir, path);
-                            try {
-                                Files.createParentDirs(outputFile);
-                                Files.copy(inputFile, outputFile);
-                                errors.add("NO INJECT:" + path);
-                                return null;
-                            } catch (IOException e1) {
-                                e1.printStackTrace();
-                            }
-                        }
-
-                    }
-
-                    File file = TBIncrementalVisitor.instrumentClass(
+            if (includePkgs.size() > 0) {
+                for (String s : includePkgs) {
+                    boolean matched = MatcherCreator.create(s).match(originalPath);
+                    if (matched) {
+                        File file = TBIncrementalVisitor.instrumentClass(
                             targetPlatformApi.getFeatureLevel(),
-                            inputDir,
+                            relativePath,
                             inputFile,
                             outputDir,
                             TBIncrementalSupportVisitor.VISITOR_BUILDER,
                             LOGGER,
                             errorType -> {
-                                errors.add(errorType.name() + ":" + path);
+                                errors.add(errorType.name() + ":" + relativePath);
                             },
                             variantContext.getAtlasExtension().getTBuildConfig().isInjectSerialVersionUID(), variantContext.getAtlasExtension().getTBuildConfig().isPatchConstructors(), variantContext.getAtlasExtension().getTBuildConfig().isPatchEachMethod(), variantContext.getAtlasExtension().getTBuildConfig().isSupportAddCallSuper(), variantContext.getAtlasExtension().getTBuildConfig().getPatchSuperMethodCount());
-                    if (file.length() == inputFile.length()) {
-                        errors.add("NO INJECT:" + path);
-                    } else {
-                        success.add("SUCCESS INJECT:" + path);
-                    }
+                        if (file.length() == inputFile.length()) {
+                            errors.add("NO INJECT:" + relativePath);
+                        } else {
+                            success.add("SUCCESS INJECT:" + relativePath);
+                        }
 
+                        return null;
+                    }
                 }
 
-            } catch (Exception e) {
-                e.printStackTrace();
-                LOGGER.warning("exception instrumentClass:" + inputFile.getPath());
-                errors.add("EXCEPTION:" + path);
-                File outputFile = new File(outputDir, path);
+                File outputFile = new File(outputDir, relativePath);
                 try {
                     Files.createParentDirs(outputFile);
                     Files.copy(inputFile, outputFile);
+                    errors.add("NO INJECT:" + relativePath);
+                    return null;
                 } catch (IOException e1) {
                     e1.printStackTrace();
                 }
 
+
+            } else {
+                for (String s : excludePkgs) {
+                    boolean matched = MatcherCreator.create(s).match(originalPath);
+                    if (matched) {
+                        File outputFile = new File(outputDir, relativePath);
+                        try {
+                            Files.createParentDirs(outputFile);
+                            Files.copy(inputFile, outputFile);
+                            errors.add("NO INJECT:" + relativePath);
+                            return null;
+                        } catch (IOException e1) {
+                            e1.printStackTrace();
+                        }
+                    }
+
+                }
+
+                File file = TBIncrementalVisitor.instrumentClass(
+                    targetPlatformApi.getFeatureLevel(),
+                    relativePath,
+                    inputFile,
+                    outputDir,
+                    TBIncrementalSupportVisitor.VISITOR_BUILDER,
+                    LOGGER,
+                    errorType -> {
+                        errors.add(errorType.name() + ":" + relativePath);
+                    },
+                    variantContext.getAtlasExtension().getTBuildConfig().isInjectSerialVersionUID(), variantContext.getAtlasExtension().getTBuildConfig().isPatchConstructors(), variantContext.getAtlasExtension().getTBuildConfig().isPatchEachMethod(), variantContext.getAtlasExtension().getTBuildConfig().isSupportAddCallSuper(), variantContext.getAtlasExtension().getTBuildConfig().getPatchSuperMethodCount());
+                if (file.length() == inputFile.length()) {
+                    errors.add("NO INJECT:" + relativePath);
+                } else {
+                    success.add("SUCCESS INJECT:" + relativePath);
+                }
+
             }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            LOGGER.warning("exception instrumentClass:" + inputFile.getPath());
+            errors.add("EXCEPTION:" + relativePath);
+            File outputFile = new File(outputDir, relativePath);
+            try {
+                Files.createParentDirs(outputFile);
+                Files.copy(inputFile, outputFile);
+            } catch (IOException e1) {
+                e1.printStackTrace();
+            }
+
         }
+
         return null;
     }
 
     private String originalPath(String path) {
-        String className = path.replace("/", ".").substring(0, path.length() - 6);
         if (mappingReaderProcess.classMapping.size() == 0) {
             return path;
         } else {
+            String className = convertPathToDotClassName(path);
             String orign = mappingReaderProcess.classMapping.get(className);
 
             if (orign == null || orign.equals(className)) {
@@ -682,6 +731,11 @@ public class TaobaoInstantRunTransform extends Transform {
             }
             return orign.replace(".", "/") + ".class";
         }
+    }
+
+    private String convertPathToDotClassName(String classPath) {
+        // ".class" length is 6.
+        return classPath.substring(0, classPath.length() - 6).replace("/", ".");
     }
 
     private File loadProguardFile() {

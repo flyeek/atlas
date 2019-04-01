@@ -1,25 +1,28 @@
 package com.android.build.gradle.internal.incremental;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
 import com.android.annotations.VisibleForTesting;
-import com.android.utils.FileUtils;
 import com.android.utils.ILogger;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Files;
 import com.taobao.android.builder.insant.matcher.Imatcher;
 import com.taobao.android.builder.insant.matcher.ImplementsMatcher;
 import com.taobao.android.builder.insant.matcher.MatcherCreator;
-import org.objectweb.asm.*;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.SerialVersionUIDAdder;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
 
 /**
  * 创建日期：2018/11/6 on 下午7:41
@@ -90,7 +93,7 @@ public class TBIncrementalVisitor extends IncrementalVisitor {
     @Nullable
     public static File instrumentClass(
             int targetApiLevel,
-            @NonNull File inputRootDirectory,
+            @NonNull String relativePath,
             @NonNull File inputFile,
             @NonNull File outputDirectory,
             @NonNull VisitorBuilder visitorBuilder,
@@ -99,23 +102,22 @@ public class TBIncrementalVisitor extends IncrementalVisitor {
             boolean addSerialVersionUID, boolean patchInitMethod, boolean patchEachMethod,boolean supportAddCallSuper,int count) throws IOException {
 
         byte[] classBytes;
-        String path = FileUtils.relativePath(inputFile, inputRootDirectory);
 
         // if the class is not eligible for IR, return the non instrumented version or null if
         // the override class is requested.
-        if (!isClassEligibleForInstantRun(inputFile)) {
-            if (injectErrorListener != null) {
-                injectErrorListener.onError(ErrorType.R_CLASS);
-            }
-            if (visitorBuilder.getOutputType() == OutputType.INSTRUMENT) {
-                File outputFile = new File(outputDirectory, path);
-                Files.createParentDirs(outputFile);
-                Files.copy(inputFile, outputFile);
-                return outputFile;
-            } else {
-                return null;
-            }
-        }
+        //if (!isClassEligibleForInstantRun(inputFile)) {
+        //    if (injectErrorListener != null) {
+        //        injectErrorListener.onError(ErrorType.R_CLASS);
+        //    }
+        //    if (visitorBuilder.getOutputType() == OutputType.INSTRUMENT) {
+        //        File outputFile = new File(outputDirectory, relativePath);
+        //        Files.createParentDirs(outputFile);
+        //        Files.copy(inputFile, outputFile);
+        //        return outputFile;
+        //    } else {
+        //        return null;
+        //    }
+        //}
         classBytes = Files.toByteArray(inputFile);
         ClassReader classReader = new ClassReader(classBytes);
         // override the getCommonSuperClass to use the thread context class loader instead of
@@ -173,7 +175,7 @@ public class TBIncrementalVisitor extends IncrementalVisitor {
         // when dealing with interface, we just copy the inputFile over without any changes unless
         // this is a package private interface.
         AccessRight accessRight = AccessRight.fromNodeAccess(classNode.access);
-        File outputFile = new File(outputDirectory, path);
+        File outputFile = new File(outputDirectory, relativePath);
 
         if (!hasOtherMethod) {
             if (visitorBuilder.getOutputType() == OutputType.INSTRUMENT) {
@@ -283,7 +285,7 @@ public class TBIncrementalVisitor extends IncrementalVisitor {
 //            }
 //        }
 
-        outputFile = new File(outputDirectory, visitorBuilder.getMangledRelativeClassFilePath(path));
+        outputFile = new File(outputDirectory, visitorBuilder.getMangledRelativeClassFilePath(relativePath));
         Files.createParentDirs(outputFile);
         IncrementalVisitor visitor =
                 visitorBuilder.build(classNode, parentsNodes, classWriter, logger);
