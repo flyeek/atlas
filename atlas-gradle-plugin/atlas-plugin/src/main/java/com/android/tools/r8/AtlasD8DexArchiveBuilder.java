@@ -1,18 +1,19 @@
 package com.android.tools.r8;
 
-import com.android.annotations.NonNull;
-import com.android.builder.dexing.ClassFileEntry;
-import com.android.builder.dexing.DexArchiveBuilder;
-import com.android.builder.dexing.DexArchiveBuilderException;
-import com.android.tools.r8.utils.FileUtils;
-import com.android.tools.r8.utils.OutputMode;
-import com.google.common.util.concurrent.MoreExecutors;
-
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.stream.Stream;
+
+import com.android.annotations.NonNull;
+import com.android.builder.dexing.ClassFileEntry;
+import com.android.builder.dexing.DexArchiveBuilder;
+import com.android.builder.dexing.DexArchiveBuilderException;
+import com.android.tools.r8.utils.OutputMode;
+import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.commons.io.FileUtils;
 
 /**
  * AtlasD8DexArchiveBuilder
@@ -75,9 +76,9 @@ public class AtlasD8DexArchiveBuilder extends DexArchiveBuilder{
 
     //supply fake maindexlist for d8 compile,we will generate real maindexlist in next step for merge dex
     private void createNew(Path mainDexList) throws IOException {
-        FileUtils.writeTextFile(mainDexList, Arrays.asList("android/taobao/atlas/bundleInfo/AtlasBundleInfoGenerator.class","android/taobao/atlas/framework/FrameworkProperties.class"));
-
-
+        File maindexListFile = new File(mainDexList.toUri());
+        FileUtils.forceMkdir(maindexListFile.getParentFile());
+        FileUtils.writeLines(maindexListFile, Arrays.asList("android/taobao/atlas/bundleInfo/AtlasBundleInfoGenerator.class","android/taobao/atlas/framework/FrameworkProperties.class"));
     }
 
     @NonNull
