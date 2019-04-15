@@ -1,49 +1,30 @@
 package com.taobao.android.builder.tasks.transform.dex;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
-import com.android.build.api.transform.*;
-import com.android.build.gradle.internal.BuildCacheUtils;
-import com.android.build.gradle.internal.InternalScope;
-import com.android.build.gradle.internal.LoggerWrapper;
+import com.android.build.api.transform.QualifiedContent;
+import com.android.build.api.transform.SecondaryFile;
+import com.android.build.api.transform.Transform;
+import com.android.build.api.transform.TransformException;
+import com.android.build.api.transform.TransformInvocation;
+import com.android.build.api.transform.TransformOutputProvider;
 import com.android.build.gradle.internal.api.AppVariantOutputContext;
-import com.android.build.gradle.internal.api.AwbTransform;
 import com.android.build.gradle.internal.pipeline.ExtendedContentType;
 import com.android.build.gradle.internal.pipeline.TransformManager;
-import com.android.build.gradle.internal.transforms.DexMergerTransform;
-import com.android.build.gradle.internal.transforms.DexMergerTransformCallable;
 import com.android.builder.core.ErrorReporter;
 import com.android.builder.dexing.DexMergerTool;
 import com.android.builder.dexing.DexingType;
-import com.android.builder.utils.ExceptionRunnable;
-import com.android.builder.utils.FileCache;
-import com.android.ide.common.blame.Message;
-import com.android.ide.common.blame.ParsingProcessOutputHandler;
-import com.android.ide.common.blame.parser.DexParser;
-import com.android.ide.common.blame.parser.ToolOutputParser;
-import com.android.ide.common.process.ProcessException;
-import com.android.ide.common.process.ProcessOutput;
-import com.android.ide.common.process.ProcessOutputHandler;
 import com.android.tools.r8.AtlasD8;
-import com.android.utils.FileUtils;
-import com.android.utils.ILogger;
-import com.google.common.collect.*;
-import com.taobao.android.builder.AtlasBuildContext;
-import com.taobao.android.builder.dependency.model.AwbBundle;
-import com.taobao.android.builder.tools.MD5Util;
-import javafx.util.Pair;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.file.FileCollection;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * @author lilong
@@ -70,9 +51,10 @@ public class AtlasDexMergerTransform extends Transform {
                                    int minSdkVersion,
                                    boolean isDebuggable
     ) {
+        final boolean isRealDebuggable = appVariantOutputContext.getVariantContext().getBuildType().isDebuggable();
         this.variantOutputContext = appVariantOutputContext;
-        atlasMainDexMerger = new AtlasMainDexMerger(dexingType, mainDexListFile, errorReporter, dexMerger, minSdkVersion, isDebuggable, appVariantOutputContext);
-        awbDexMerger = new AwbDexsMerger(DexingType.MONO_DEX, null, errorReporter, dexMerger, minSdkVersion, isDebuggable, appVariantOutputContext);
+        atlasMainDexMerger = new AtlasMainDexMerger(dexingType, mainDexListFile, errorReporter, dexMerger, minSdkVersion, isRealDebuggable, appVariantOutputContext);
+        awbDexMerger = new AwbDexsMerger(DexingType.MONO_DEX, null, errorReporter, dexMerger, minSdkVersion, isRealDebuggable, appVariantOutputContext);
         this.mainDexListFile = mainDexListFile == null ? null : mainDexListFile.getSingleFile();
         this.dexingType = dexingType;
         this.dexMergerTool = dexMerger;
