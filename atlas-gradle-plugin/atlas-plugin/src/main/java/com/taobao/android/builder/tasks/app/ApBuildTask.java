@@ -209,9 +209,14 @@
 
 package com.taobao.android.builder.tasks.app;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.Callable;
+
 import com.alibaba.fastjson.JSON;
+
+import com.android.SdkConstants;
 import com.android.build.gradle.api.BaseVariantOutput;
-import com.android.build.gradle.internal.ApkDataUtils;
 import com.android.build.gradle.internal.api.ApContext;
 import com.android.build.gradle.internal.api.AppVariantContext;
 import com.android.build.gradle.internal.api.AppVariantOutputContext;
@@ -220,13 +225,11 @@ import com.android.build.gradle.internal.tasks.DefaultAndroidTask;
 import com.taobao.android.builder.tasks.manager.MtlBaseTaskAction;
 import com.taobao.android.builder.tools.zip.BetterZip;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.filefilter.FileFilterUtils;
+import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.gradle.api.GradleException;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.TaskAction;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.Callable;
 
 /**
  * APTask to package files
@@ -292,8 +295,15 @@ public class ApBuildTask extends DefaultAndroidTask {
         int index = path.lastIndexOf(".apk");
         File APFile = new File(path.substring(0, index) + ".ap");
 
-        addFile(com.android.utils.FileUtils.join(baseVariantOutputData.getProcessManifest().getManifestOutputDirectory(),ApkDataUtils.get(baseVariantOutputData).getDirName(),"AndroidManifest.xml"),
-                "AndroidManifest.xml");
+        // Collect Manifest File.
+        File manifestOutputDir = appVariantContext.getScope().getInstantRunManifestOutputDirectory();
+        boolean isHasManifestFile = FileUtils.listFiles(manifestOutputDir,
+            FileFilterUtils.prefixFileFilter("AndroidManifest"), TrueFileFilter.INSTANCE).size() >= 2;
+        if (!isHasManifestFile) {
+            manifestOutputDir = appVariantContext.getScope().getManifestOutputDirectory();
+        }
+        File mergedManifest = new File(manifestOutputDir, SdkConstants.ANDROID_MANIFEST_XML);
+        addFile(mergedManifest, "AndroidManifest.xml");
         addFile(apkFile, ApContext.AP_INLINE_APK_FILENAME);
         addFile(new File(
                 appVariantContext.getScope().getGlobalScope().getIntermediatesDir().getAbsolutePath()+"/"+
