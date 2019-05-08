@@ -394,7 +394,7 @@ public class TaobaoInstantRunTransform extends Transform {
 
         if (inputFile.getPath().endsWith(SdkConstants.DOT_CLASS)) {
             String fileName = inputFile.getName();
-            return !fileName.equals("R" + SdkConstants.DOT_CLASS) && !fileName.startsWith("R$");
+            return fileName.equals("R" + SdkConstants.DOT_CLASS) || fileName.startsWith("R$");
         } else {
             return false;
         }
