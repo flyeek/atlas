@@ -256,6 +256,6 @@ jar {
     from zipTree("libs/libarsc.jar")
 }
 
-//version = '3.0.1-rc86-fix15-youku-forked-20190422-SNAPSHOT'
+//version = '3.0.1-rc86-fix15-youku-forked-20190520-SNAPSHOT'
 version = '3.0.1-rc86-fix15-youku-forked-test-SNAPSHOT'
 
