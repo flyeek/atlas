@@ -1,20 +1,26 @@
 package com.android.build.gradle.internal.incremental;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import com.android.annotations.NonNull;
 import com.android.annotations.VisibleForTesting;
 import com.android.utils.ILogger;
-import org.objectweb.asm.*;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.GeneratorAdapter;
 import org.objectweb.asm.commons.JSRInlinerAdapter;
 import org.objectweb.asm.commons.Method;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.MethodNode;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 创建日期：2019/1/5 on 上午10:54
@@ -175,23 +181,23 @@ public class TBIncrementalChangeVisitor extends TBIncrementalVisitor {
         // Do not carry on any access flags from the original method. For example synchronized
         // on the original method would translate into a static synchronized method here.
         access = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
-        MethodNode method = getMethodByNameInClass(name, desc, classNode);
         if (name.equals(ByteCodeUtils.CONSTRUCTOR)) {
-            Constructor constructor = ConstructorBuilder.build(visitedClassName, method);
-
-            MethodVisitor mv = createMethodAdapter(access, constructor.args.name,
-                    constructor.args.desc, constructor.args.desc, constructor.args.signature,
-                    exceptions, isStatic, true /* isConstructor */);
-            constructor.args.accept(mv);
-
-            mv = createMethodAdapter(access, constructor.body.name,
-                    constructor.body.desc, newDesc, constructor.body.signature, exceptions,
-                    isStatic, true /* isConstructor */);
-            constructor.body.accept(mv);
-
-            // Remember our created methods so we can generated the access$dispatch for them.
-            addedMethods.add(constructor.args);
-            addedMethods.add(constructor.body);
+            //MethodNode method = getMethodByNameInClass(name, desc, classNode);
+            //Constructor constructor = ConstructorBuilder.build(visitedClassName, method);
+            //
+            //MethodVisitor mv = createMethodAdapter(access, constructor.args.name,
+            //        constructor.args.desc, constructor.args.desc, constructor.args.signature,
+            //        exceptions, isStatic, true /* isConstructor */);
+            //constructor.args.accept(mv);
+            //
+            //mv = createMethodAdapter(access, constructor.body.name,
+            //        constructor.body.desc, newDesc, constructor.body.signature, exceptions,
+            //        isStatic, true /* isConstructor */);
+            //constructor.body.accept(mv);
+            //
+            //// Remember our created methods so we can generated the access$dispatch for them.
+            //addedMethods.add(constructor.args);
+            //addedMethods.add(constructor.body);
             return null;
         } else {
             String newName = isStatic ? computeOverrideMethodName(name, desc) : name;
