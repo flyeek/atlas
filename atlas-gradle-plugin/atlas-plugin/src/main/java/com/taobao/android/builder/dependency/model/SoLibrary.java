@@ -209,15 +209,14 @@
 
 package com.taobao.android.builder.dependency.model;
 
+import java.io.File;
+
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
 import com.android.build.gradle.internal.ide.DependencyConvertUtils;
 import com.android.builder.model.MavenCoordinates;
 import com.taobao.android.builder.dependency.parser.ResolvedDependencyInfo;
-
 import org.gradle.api.artifacts.ResolvedArtifact;
-
-import java.io.File;
 
 /**
  * SolibThe dependence of
@@ -244,7 +243,7 @@ public class SoLibrary {
     public SoLibrary(ResolvedDependencyInfo resolvedDependencyInfo) {
         ResolvedArtifact artifact = resolvedDependencyInfo.getResolvedArtifact();
 
-        this.mResolvedCoordinates = DependencyConvertUtils.convert(artifact, DependencyConvertUtils.Type.SOLIB);
+        this.mResolvedCoordinates = DependencyConvertUtils.convert(artifact, DependencyConvertUtils.Type.getType(resolvedDependencyInfo.getType()));
         this.mSoLibFile = artifact.getFile();
         this.mSoLibFolder = resolvedDependencyInfo.getExplodedDir();
     }

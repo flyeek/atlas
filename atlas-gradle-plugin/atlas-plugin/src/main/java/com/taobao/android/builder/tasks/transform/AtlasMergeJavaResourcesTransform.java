@@ -1,9 +1,32 @@
 package com.taobao.android.builder.tasks.transform;
 
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.zip.ZipOutputStream;
+
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
-import com.android.build.api.transform.*;
+import com.android.build.api.transform.Format;
+import com.android.build.api.transform.QualifiedContent;
+import com.android.build.api.transform.TransformInvocation;
+import com.android.build.api.transform.TransformOutputProvider;
 import com.android.build.gradle.internal.api.AppVariantOutputContext;
 import com.android.build.gradle.internal.api.AwbTransform;
 import com.android.build.gradle.internal.dsl.PackagingOptions;
@@ -14,7 +37,17 @@ import com.android.build.gradle.internal.pipeline.ExtendedContentType;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.transforms.MergeJavaResourcesTransform;
 import com.android.builder.files.FileCacheByPath;
-import com.android.builder.merge.*;
+import com.android.builder.merge.DelegateIncrementalFileMergerOutput;
+import com.android.builder.merge.FilterIncrementalFileMergerInput;
+import com.android.builder.merge.IncrementalFileMerger;
+import com.android.builder.merge.IncrementalFileMergerInput;
+import com.android.builder.merge.IncrementalFileMergerOutput;
+import com.android.builder.merge.IncrementalFileMergerOutputs;
+import com.android.builder.merge.IncrementalFileMergerState;
+import com.android.builder.merge.MergeOutputWriters;
+import com.android.builder.merge.RenameIncrementalFileMergerInput;
+import com.android.builder.merge.StreamMergeAlgorithm;
+import com.android.builder.merge.StreamMergeAlgorithms;
 import com.android.ide.common.internal.WaitableExecutor;
 import com.android.utils.FileUtils;
 import com.android.utils.ImmutableCollectors;
@@ -25,18 +58,6 @@ import com.taobao.android.builder.dependency.model.AwbBundle;
 import com.taobao.android.builder.tools.MD5Util;
 import com.taobao.android.builder.tools.zip.BetterZip;
 import com.taobao.android.builder.tools.zip.ZipUtils;
-import org.gradle.internal.impldep.org.apache.tools.zip.ZipUtil;
-
-import java.io.*;
-import java.nio.file.Files;
-import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.zip.ZipOutputStream;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -48,7 +69,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 public class AtlasMergeJavaResourcesTransform extends MergeJavaResourcesTransform {
 
-    private static final Pattern JAR_ABI_PATTERN = Pattern.compile("lib/([^/]+)/[^/]+");
+    private static final Pattern JAR_ABI_PATTERN = Pattern.compile("([^/]+/)*lib/([^/]+)/[^/]+");
     private static final Pattern ABI_FILENAME_PATTERN = Pattern.compile(".*\\.so");
 
     @NonNull
@@ -104,7 +125,8 @@ public class AtlasMergeJavaResourcesTransform extends MergeJavaResourcesTransfor
                         if (m.matches()) {
                             paths.add(path);
                             // remove the beginning of the path (lib/<abi>/)
-                            String filename = path.substring(5 + m.group(1).length());
+                            String[] pathSplit = path.split("/");
+                            String filename = pathSplit[pathSplit.length - 1];
                             // and check the filename
                             return ABI_FILENAME_PATTERN.matcher(filename).matches() ||
                                     SdkConstants.FN_GDBSERVER.equals(filename) ||

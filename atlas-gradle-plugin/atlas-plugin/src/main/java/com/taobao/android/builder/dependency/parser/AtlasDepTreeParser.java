@@ -209,7 +209,16 @@
 
 package com.taobao.android.builder.dependency.parser;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.alibaba.fastjson.JSON;
+
 import com.android.annotations.NonNull;
 import com.android.build.gradle.internal.ExtraModelInfo;
 import com.android.build.gradle.internal.LoggerWrapper;
@@ -231,13 +240,15 @@ import com.taobao.android.builder.manager.AtlasConfigurationHelper;
 import org.apache.commons.lang.StringUtils;
 import org.gradle.api.GradleException;
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.*;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.ModuleVersionIdentifier;
+import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.result.DependencyResult;
 import org.gradle.api.internal.artifacts.dependencies.DefaultProjectDependency;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.specs.Specs;
-
-import java.util.*;
 
 import static com.android.builder.core.ErrorReporter.EvaluationMode.STANDARD;
 
@@ -471,6 +482,9 @@ public class AtlasDepTreeParser {
                 awbBundle.getJavaLibraries().add(DependencyConvertUtils.toJavaLib(dependencyInfo));
                 break;
             case SOLIB:
+                awbBundle.getSoLibraries().add(new SoLibrary(dependencyInfo));
+                return;
+            case NAR:
                 awbBundle.getSoLibraries().add(new SoLibrary(dependencyInfo));
                 return;
             case AWB:

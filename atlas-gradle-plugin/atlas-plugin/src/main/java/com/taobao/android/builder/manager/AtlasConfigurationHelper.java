@@ -209,7 +209,18 @@
 
 package com.taobao.android.builder.manager;
 
-import com.android.build.gradle.*;
+import java.io.File;
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
+
+import com.android.build.gradle.AppExtension;
+import com.android.build.gradle.AppPlugin;
+import com.android.build.gradle.BasePlugin;
+import com.android.build.gradle.FeatureExtension;
+import com.android.build.gradle.FeaturePlugin;
+import com.android.build.gradle.LibraryExtension;
+import com.android.build.gradle.LibraryPlugin;
 import com.android.build.gradle.internal.AtlasDependencyManager;
 import com.android.build.gradle.internal.ExtraModelInfo;
 import com.android.build.gradle.internal.LoggerWrapper;
@@ -220,7 +231,12 @@ import com.android.build.gradle.internal.process.GradleJavaProcessExecutor;
 import com.android.build.gradle.internal.process.GradleProcessExecutor;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.publishing.AtlasAndroidArtifacts;
-import com.android.build.gradle.internal.transforms.*;
+import com.android.build.gradle.internal.transforms.ExtractApTransform;
+import com.android.build.gradle.internal.transforms.ExtractAwbTransform;
+import com.android.build.gradle.internal.transforms.ExtractNarTransform;
+import com.android.build.gradle.internal.transforms.ExtractSolibTransform;
+import com.android.build.gradle.internal.transforms.LoadSolibFromLibsTransform;
+import com.android.build.gradle.internal.transforms.LoadSolibTransform;
 import com.android.build.gradle.options.ProjectOptions;
 import com.android.builder.core.AndroidBuilder;
 import com.android.builder.core.AtlasBuilder;
@@ -240,12 +256,6 @@ import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.internal.reflect.Instantiator;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.function.Consumer;
 
 import static org.gradle.api.internal.artifacts.ArtifactAttributes.ARTIFACT_FORMAT;
 
@@ -504,6 +514,13 @@ public class AtlasConfigurationHelper {
                     reg.getTo().attribute(ARTIFACT_FORMAT, explodedSolibType);
                     reg.artifactTransform(ExtractSolibTransform.class);
                 });
+
+        dependencyHandler.registerTransform(
+            reg -> {
+                reg.getFrom().attribute(ARTIFACT_FORMAT, AtlasAndroidArtifacts.TYPE_NAR);
+                reg.getTo().attribute(ARTIFACT_FORMAT, explodedSolibType);
+                reg.artifactTransform(ExtractNarTransform.class);
+            });
 
         dependencyHandler.registerTransform(
                 reg -> {

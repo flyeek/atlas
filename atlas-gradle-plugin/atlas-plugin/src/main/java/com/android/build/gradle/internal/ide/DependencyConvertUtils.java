@@ -209,6 +209,12 @@
 
 package com.android.build.gradle.internal.ide;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.android.builder.dependency.MavenCoordinatesImpl;
 import com.android.builder.dependency.level2.AndroidDependency;
 import com.android.builder.model.AndroidLibrary;
@@ -225,12 +231,6 @@ import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.result.DependencyResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Tool classes that depend on object transformation
@@ -350,6 +350,7 @@ public class DependencyConvertUtils {
         AAR("aar"),
         JAR("jar"),
         SOLIB("solib"),
+        NAR("nar"),
         AP("ap"),
         APK("apk"),
         OTHER("");

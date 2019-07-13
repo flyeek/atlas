@@ -19,6 +19,7 @@ public class AtlasAndroidArtifacts extends AndroidArtifacts{
     public static final String TYPE_AP ="ap";
 
     public static final String TYPE_SOLIB ="solib";
+    public static final String TYPE_NAR ="nar";
 
     public static final String TYPE_AWO = "awo";
 
